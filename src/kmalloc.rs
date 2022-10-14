@@ -31,7 +31,7 @@ const KMALLOC_INFO: [CacheInfo; CACHE_INFO_MAX] = [
     CacheInfo::new(16*1024,8,b"alloc_16384"),
     CacheInfo::new(32*1024,8,b"malloc_32768"),
     CacheInfo::new(65536,8,b"malloc_65536"),
-    CacheInfo::new(8192000,8,b"malloc_819200")
+    CacheInfo::new(8192000,8,b"malloc_8192000")
 
 ];
 
@@ -43,7 +43,6 @@ pub fn init_kmalloc() {
         } else{
             create_cache(info.name, info.size, 12, info.align);
         }
-
     }
     print_slab_system_info();
 }
