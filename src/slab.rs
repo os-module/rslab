@@ -2,7 +2,7 @@ use core::cmp::{max, min};
 use core::fmt::{Debug, Formatter};
 use core::mem::forget;
 use core::ops::{Add};
-use double_link_list::*;
+use doubly_linked_list::*;
 
 
 
