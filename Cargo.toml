@@ -6,3 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+double-link-list = {path = "../double-link-list"}
+spin = "0.9.2"
+log = "0.4.14"
