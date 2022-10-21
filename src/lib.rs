@@ -6,6 +6,8 @@ extern crate log;
 extern crate alloc;
 
 use doubly_linked_list::*;
+use preprint::pprintln;
+
 mod formation;
 mod kmalloc;
 mod slab;

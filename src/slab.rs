@@ -9,6 +9,7 @@ use core::fmt::{Debug, Formatter};
 use core::mem::forget;
 use core::ops::Add;
 use doubly_linked_list::*;
+use preprint::pprintln;
 
 const CACHE_NAME_MAX: usize = 20;
 
@@ -104,7 +105,7 @@ impl MemCache {
         let per_objects = self.per_objects as usize;
         let total = self.mem_cache_node.total_slabs() * per_objects;
         let used = self.mem_cache_node.used_objects(per_objects);
-        info!(
+        pprintln!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}",
             str, self.object_size, self.per_frames, self.per_objects, self.align, used, total
         );
@@ -689,11 +690,11 @@ pub fn dealloc_to_slab(addr: *mut u8) {
 /// cache_name object_size per_frames align used_object total_object
 pub fn print_slab_system_info() {
     let cache_list = unsafe { &SLAB_CACHES };
-    info!("There are {} caches in system:", cache_list.len());
-    info!("cache_name object_size per_frames per_objects align used_object total_object");
+    pprintln!("There are {} caches in system:", cache_list.len());
+    pprintln!("cache_name object_size per_frames per_objects align used_object total_object");
     cache_list.iter().for_each(|cache| {
         let cache = unsafe { &(*container_of!(cache as usize, MemCache, list)) };
-        info!("-------------------------------------------------------------------------");
+        pprintln!("-------------------------------------------------------------------------");
         cache.print_info();
     });
 }
