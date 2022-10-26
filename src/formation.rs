@@ -7,4 +7,5 @@ pub enum InitError {
 pub enum SlabError {
     InitError(InitError),
     NameDuplicate,
+    ArrayCacheAllocError,
 }

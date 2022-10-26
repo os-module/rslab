@@ -16,7 +16,7 @@ use slab::*;
 pub use kmalloc::SlabAllocator;
 pub use slab::{
     alloc_from_slab, create_mem_cache, dealloc_to_slab, print_slab_system_info,
-    reclaim_frame_from_cache,MemCache
+    reclaim_frame_from_cache, MemCache,
 };
 
 // 管理所有的list_head链表
@@ -41,6 +41,7 @@ fn cls() -> usize {
 extern "C" {
     fn alloc_frames(num: usize) -> *mut u8;
     fn free_frames(addr: *mut u8, num: usize);
+    fn current_cpu_id() -> usize;
 }
 
 pub fn init_slab_system(frame_size: usize, cache_line_size: usize) {

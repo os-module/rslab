@@ -4,41 +4,41 @@ use core::alloc::{GlobalAlloc, Layout};
 use doubly_linked_list::*;
 use spin::Mutex;
 
-struct CacheInfo<'a> {
+struct CacheInfo {
     size: u32,
     align: u32,
-    name: &'a [u8],
+    name: &'static str,
 }
 
-impl CacheInfo<'_> {
-    pub const fn new(size: u32, align: u32, name: &'static [u8]) -> Self {
+impl CacheInfo {
+    pub const fn new(size: u32, align: u32, name: &'static str) -> Self {
         CacheInfo { size, align, name }
     }
 }
 
 const CACHE_INFO_MAX: usize = 21;
 const KMALLOC_INFO: [CacheInfo; CACHE_INFO_MAX] = [
-    CacheInfo::new(8, 8, b"malloc-8"),
-    CacheInfo::new(16, 8, b"malloc-16"),
-    CacheInfo::new(32, 8, b"malloc-32"),
-    CacheInfo::new(64, 8, b"malloc-64"),
-    CacheInfo::new(128, 8, b"malloc-128"),
-    CacheInfo::new(256, 8, b"malloc-256"),
-    CacheInfo::new(512, 8, b"malloc-512"),
-    CacheInfo::new(1024, 8, b"malloc-1024"),
-    CacheInfo::new(2048, 8, b"malloc-2048"),
-    CacheInfo::new(4096, 8, b"malloc-4096"),
-    CacheInfo::new(8192, 8, b"malloc-8192"),
-    CacheInfo::new(4 * 4096, 8, b"malloc_16384"),
-    CacheInfo::new(8 * 4096, 8, b"malloc_32768"),
-    CacheInfo::new(16 * 4096, 8, b"malloc_65536"),
-    CacheInfo::new(32 * 4096, 8, b"malloc_131072"),
-    CacheInfo::new(64 * 4096, 8, b"malloc_262144"),
-    CacheInfo::new(128 * 4096, 8, b"malloc_524288"),
-    CacheInfo::new(256 * 4096, 8, b"malloc_1048576"),
-    CacheInfo::new(512 * 4096, 8, b"malloc_2097152"),
-    CacheInfo::new(1024 * 4096, 8, b"malloc_4194304"),
-    CacheInfo::new(2048 * 4096, 8, b"malloc_8388608"),
+    CacheInfo::new(8, 8, "malloc-8"),
+    CacheInfo::new(16, 8, "malloc-16"),
+    CacheInfo::new(32, 8, "malloc-32"),
+    CacheInfo::new(64, 8, "malloc-64"),
+    CacheInfo::new(128, 8, "malloc-128"),
+    CacheInfo::new(256, 8, "malloc-256"),
+    CacheInfo::new(512, 8, "malloc-512"),
+    CacheInfo::new(1024, 8, "malloc-1024"),
+    CacheInfo::new(2048, 8, "malloc-2048"),
+    CacheInfo::new(4096, 8, "malloc-4096"),
+    CacheInfo::new(8192, 8, "malloc-8192"),
+    CacheInfo::new(4 * 4096, 8, "malloc_16384"),
+    CacheInfo::new(8 * 4096, 8, "malloc_32768"),
+    CacheInfo::new(16 * 4096, 8, "malloc_65536"),
+    CacheInfo::new(32 * 4096, 8, "malloc_131072"),
+    CacheInfo::new(64 * 4096, 8, "malloc_262144"),
+    CacheInfo::new(128 * 4096, 8, "malloc_524288"),
+    CacheInfo::new(256 * 4096, 8, "malloc_1048576"),
+    CacheInfo::new(512 * 4096, 8, "malloc_2097152"),
+    CacheInfo::new(1024 * 4096, 8, "malloc_4194304"),
+    CacheInfo::new(2048 * 4096, 8, "malloc_8388608"),
 ];
 
 pub fn init_kmalloc() {
