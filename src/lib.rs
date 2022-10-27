@@ -43,6 +43,7 @@ extern "C" {
     fn current_cpu_id() -> usize;
 }
 
+/// 初始化slab系统，slab系统需要知道页帧大小与缓存行大小
 pub fn init_slab_system(frame_size: usize, cache_line_size: usize) {
     init_slab_info(frame_size, cache_line_size);
     slab::mem_cache_init(); //初始化第一个Cache

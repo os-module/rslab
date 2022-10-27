@@ -48,16 +48,18 @@ pub struct SlabInfo{
     pub shared_objects:u32
 }
 
-/// Cache define\
-/// per_objects:每个slab的对象数量\
-/// per_frames: 每个slab的页帧数量 2^per_frames\
-/// object_size: 对象大小\
-/// mem_cache_node: Slab管理节点\
-/// cache_name: Cache名称\
-/// color: 可偏移数量\
-/// color_off: 硬件缓存对齐\
-/// color_next: 下一个偏移\
-/// flags: 控制slab位置
+// Cache define
+// array_cache：本地高速缓存
+// list：链表
+// per_objects:每个slab的对象数量
+// per_frames: 每个slab的页帧数量 2^per_frames
+// object_size: 对象大小
+// mem_cache_node: Slab管理节点
+// cache_name: Cache名称
+// color: 可偏移数量
+// color_off: 硬件缓存对齐
+// color_next: 下一个偏移
+// flags: 控制slab位置
 pub struct MemCache {
     array_cache: [*mut ArrayCache; CPUS as usize],
     list: ListHead,
@@ -891,6 +893,10 @@ pub fn mem_cache_init() {
     info!("ARRAY_CACHE:\n{:?}", array_cache);
 }
 
+
+
+///
+/// 创建自定义的cache
 pub fn create_mem_cache(
     name: &'static str,
     object_size: u32,
@@ -977,6 +983,7 @@ pub fn alloc_from_slab(size: usize, _align: usize) -> Option<*mut u8> {
     }
 }
 
+/// 将内存还给slab系统
 pub fn dealloc_to_slab(addr: *mut u8)->Result<(),SlabError> {
     let cache_list = unsafe { &SLAB_CACHES };
     let mut ok = false;
@@ -996,8 +1003,6 @@ pub fn dealloc_to_slab(addr: *mut u8)->Result<(),SlabError> {
 }
 
 /// 打印系统内的所有cache 信息
-/// 格式:
-/// cache_name object_size per_frames align used_object total_object
 pub fn print_slab_system_info() {
     let cache_list = unsafe { &SLAB_CACHES };
     pprintln!("There are {} caches in system:", cache_list.len());
