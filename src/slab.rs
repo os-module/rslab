@@ -1,7 +1,7 @@
 use super::alloc_frames;
 use crate::formation::*;
-use crate::{current_cpu_id, SLAB_CACHES};
 use crate::{cls, frame_size, free_frames, MEM_CACHE_BOOT};
+use crate::{current_cpu_id, SLAB_CACHES};
 use alloc::alloc::dealloc;
 use bitflags::bitflags;
 use core::cmp::{max, min};
@@ -11,9 +11,9 @@ use core::ops::Add;
 use core::sync::atomic::AtomicUsize;
 use doubly_linked_list::*;
 use preprint::pprintln;
-use spin::Mutex;
 use spin::mutex::SpinMutex;
 use spin::rwlock::RwLock;
+use spin::Mutex;
 
 const PER_CPU_OBJECTS: usize = 16;
 const CPUS: usize = 8;
@@ -23,11 +23,7 @@ static mut ARRAY_CACHE_FOR_ARRAY: [ArrayCache; CPUS] = [VAL; CPUS];
 static mut ARRAY_CACHE_NODE_BOOT: ArrayCache = ArrayCache::new();
 static mut ARRAY_CACHE_NODE_ARRAY: ArrayCache = ArrayCache::new();
 
-const VAL:ArrayCache = create_array();
-const fn create_array()->ArrayCache{
-    ArrayCache::new()
-}
-
+const VAL: ArrayCache = ArrayCache::new();
 
 bitflags! {
     pub struct Flags:u8{
@@ -35,6 +31,21 @@ bitflags! {
         const SLAB_ON = 0b0000_0001;
         const DESTROY = 0b0000_0010;
     }
+}
+
+
+pub struct SlabInfo{
+    pub cache_name:&'static str,
+    pub object_size:u32,
+    pub align:u32,
+    pub per_frames:u32,
+    pub per_objects:u32,
+    pub total_objects:u32,
+    pub used_objects:u32,
+    pub limit:u32,
+    pub batch_count:u32,
+    pub local_objects:u32,
+    pub shared_objects:u32
 }
 
 /// Cache define\
@@ -46,7 +57,7 @@ bitflags! {
 /// color: 可偏移数量\
 /// color_off: 硬件缓存对齐\
 /// color_next: 下一个偏移\
-/// flags: 控制slab位置\
+/// flags: 控制slab位置
 pub struct MemCache {
     array_cache: [*mut ArrayCache; CPUS as usize],
     list: ListHead,
@@ -114,18 +125,7 @@ impl MemCache {
     }
     /// 打印信息
     pub fn print_info(&self) {
-        // 计算总的对象和已使用的对象
-        let per_objects = self.per_objects as usize;
-        let total = self.mem_cache_node.total_slabs() * per_objects;
-        let used = self.mem_cache_node.used_objects(per_objects);
-        // 计算本地高速缓存的对象数量
-        let mut local = 0;
-        for i in 0..CPUS {
-            local += unsafe { (*self.array_cache[i]).avail };
-        }
-        //计算共享高速缓存的对象数量
-        let shared =unsafe { (*self.mem_cache_node.shared).avail};
-
+        let slab_info = self.get_cache_info();
         pprintln!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             self.cache_name,
@@ -133,13 +133,41 @@ impl MemCache {
             self.align,
             self.per_frames,
             self.per_objects,
-            total,
-            used as u32-local-shared,
+            slab_info.total_objects,
+            slab_info.used_objects,
             PER_CPU_OBJECTS,
-            PER_CPU_OBJECTS/2,
-            local,
-            shared
+            PER_CPU_OBJECTS / 2,
+            slab_info.local_objects,
+            slab_info.shared_objects
         );
+    }
+    pub fn get_cache_info(&self)->SlabInfo{
+        // 计算总的对象和已使用的对象
+        let per_objects = self.per_objects as usize;
+        let total = self.mem_cache_node.total_slabs() * per_objects;
+        let used = self.mem_cache_node.used_objects(per_objects);
+        // 计算本地高速缓存的对象数量
+        let mut local = 0;
+        for i in 0..CPUS {
+            local += unsafe { (*self.array_cache[i]).inner.lock().avail };
+        }
+        //计算共享高速缓存的对象数量
+        let shared = unsafe { (*self.mem_cache_node.shared).inner.lock().avail };
+        assert!(used as u32 >=local+shared);
+        // info!("total:{},used:{},local:{},shared:{}",total,used,local,shared);
+        SlabInfo{
+            cache_name: self.cache_name,
+            object_size: self.object_size,
+            align: self.align,
+            per_frames: self.per_frames,
+            per_objects: self.per_objects,
+            total_objects: total as u32,
+            used_objects: used as u32-shared-local,
+            limit: PER_CPU_OBJECTS as u32,
+            batch_count: PER_CPU_OBJECTS as u32 /2,
+            local_objects: local,
+            shared_objects: shared
+        }
     }
 
     /// 需要根据对象大小和对齐方式计算出
@@ -201,7 +229,7 @@ impl MemCache {
             }
             let array_cache_addr = array_cache_addr.unwrap();
             self.array_cache[i] = array_cache_addr as *mut ArrayCache;
-            unsafe {(*self.array_cache[i]).init()};
+            unsafe { (*self.array_cache[i]).inner.lock().init() };
         }
         self.mem_cache_node.set_array_cache().unwrap();
         Ok(())
@@ -237,32 +265,38 @@ impl MemCache {
         //先从高速缓存分配
         // todo!(多cpu访问一致性保证 ?)
         // 如果一个cpu上的线程正在分配内存并且以及获取了cpu_id，此时其再被抢占放到另一个cpu上可能会发生错误?
-        let cpu_id = unsafe{ current_cpu_id()};
+        let cpu_id = unsafe { current_cpu_id() };
         let array_cache = unsafe { &mut *self.array_cache[cpu_id] };
-
+        let mut array_cache = array_cache.inner.lock();
         if array_cache.is_empty() {
             let mut new_objects = [0usize; PER_CPU_OBJECTS];
-            self.mem_cache_node.alloc(self, &mut new_objects[0..array_cache.batch_count as usize]);
-            array_cache.push(&new_objects[0..array_cache.batch_count as usize]);
+            self.mem_cache_node
+                .alloc(self, &mut new_objects[0..array_cache.batch_count as usize]);
+            let batch_count = array_cache.batch_count as usize;
+            array_cache.push(&new_objects[0..batch_count]);
         }
         array_cache.get()
     }
 
-
-    pub fn dealloc(&self, addr: *mut u8) {
+    pub fn dealloc(&self, addr: *mut u8)->Result<(),SlabError>{
         if self.flags.contains(Flags::DESTROY) {
             panic!("cache had been destroyed");
         }
-        let cpu_id = unsafe{ current_cpu_id()};
+        //先判断此地址是否属于此cache
+        if self.mem_cache_node.is_in_cache(addr).is_none() {
+            return Err(SlabError::NotInCache);
+        }
+        let cpu_id = unsafe { current_cpu_id() };
         let array_cache = unsafe { &mut *self.array_cache[cpu_id] };
+        let mut array_cache = array_cache.inner.lock();
         if array_cache.is_full() {
             let mut objects = [0usize; PER_CPU_OBJECTS];
-            array_cache.pop(&mut objects[0..array_cache.batch_count as usize]);
-            self.mem_cache_node.dealloc( &objects[0..array_cache.batch_count as usize]);
-            array_cache.put(addr);
-        }else {
-            array_cache.put(addr)
+            let batch_count = array_cache.batch_count as usize;
+            array_cache.pop(&mut objects[0..batch_count]);
+            self.mem_cache_node.dealloc(&objects[0..batch_count]);
         }
+        array_cache.put(addr);
+        Ok(())
     }
     fn reclaim_frames(&mut self) -> usize {
         self.mem_cache_node.reclaim_frames(self.per_frames as usize)
@@ -273,6 +307,11 @@ impl MemCache {
     /// 由于cache本身的地址仍然会是有效的，使用者可能会再次使用已经destroy的
     /// cache分配内存，以此需要设置标志防止其再使用
     pub fn destroy(&mut self) {
+        // 先把高速缓存的内存回收
+        for i in 0..CPUS {
+            let array_cache = self.array_cache[i];
+            dealloc_to_slab(array_cache as *mut u8);
+        }
         self.mem_cache_node.destroy();
         //回收掉自己
         let addr = self as *const Self as *mut u8;
@@ -298,22 +337,27 @@ fn slab_descriptor_align_size(object_num: u32, align: u32) -> u32 {
 /// 为了缓存命中率更高，
 /// 取对象的时候从后往前取，放对象的时候从前往后放
 struct ArrayCache {
+    inner: Mutex<ArrayCacheInner>,
+}
+
+impl ArrayCache {
+    const fn new() -> Self {
+        Self {
+            inner: Mutex::new(ArrayCacheInner::new()),
+        }
+    }
+}
+
+struct ArrayCacheInner {
     avail: u32,
     limit: u32,
     batch_count: u32,
     entries: [usize; PER_CPU_OBJECTS as usize],
 }
-
-struct ArrayCacheInner{
-    avail: u32,
-    limit: u32,
-    batch_count: u32,
-    entries: [usize; PER_CPU_OBJECTS as usize],
-}
-
 
 impl Debug for ArrayCache {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        let inner = self.inner.lock();
         f.write_fmt(format_args!(
             "\
         ArrayCache {{\n\
@@ -321,47 +365,48 @@ impl Debug for ArrayCache {
         \tlimit:{}\n\
         \tbatch_count:{}\n\
         \tentries:{:?}}}",
-            self.avail, self.limit, self.batch_count, self.entries[0]
+            inner.avail, inner.limit, inner.batch_count, inner.entries
         ))
     }
 }
 
-impl ArrayCache {
+impl ArrayCacheInner {
     const fn new() -> Self {
         Self {
             avail: 0,
             limit: PER_CPU_OBJECTS as u32,
-            batch_count: PER_CPU_OBJECTS  as u32 / 2 ,
-            entries: [0; PER_CPU_OBJECTS ],
+            batch_count: PER_CPU_OBJECTS as u32 / 2,
+            entries: [0; PER_CPU_OBJECTS],
         }
     }
     #[inline]
     fn init(&mut self) {
-        self.avail = 0;
-        self.limit = PER_CPU_OBJECTS as u32 ;
-        self.batch_count = PER_CPU_OBJECTS as u32 /2;
-        self.entries = [0; PER_CPU_OBJECTS];
+        *self = Self::new();
     }
 
     /// 需要保证
-    fn push(&mut self, addrs:&[usize]) {
+    fn push(&mut self, addrs: &[usize]) {
         //从下一层获取的batch_count个对象
         //放到array_cache中
         assert!(addrs.len() <= self.batch_count as usize);
-        assert!(addrs.len()+self.avail as usize <= self.limit as usize);
+        assert!(addrs.len() + self.avail as usize <= self.limit as usize);
         for i in 0..self.batch_count as usize {
             self.entries[self.avail as usize + i] = addrs[i];
         }
         self.avail += self.batch_count;
     }
     #[inline]
-    fn pop(&mut self, addrs:&mut [usize]) {
+    fn pop(&mut self, addrs: &mut [usize]) {
         //从本层往下一层回收的batch_count个对象
         //从前往后取
         assert_eq!(addrs.len(), self.batch_count as usize);
-        assert_eq!(self.avail,self.limit);
-        for i in 0..self.batch_count as usize{
+        assert_eq!(self.avail, self.limit);
+        for i in 0..self.batch_count as usize {
             addrs[i] = self.entries[i];
+        }
+        //从前往后取，所以后面的对象往前移动
+        for i in self.batch_count as usize..self.avail as usize {
+            self.entries[i - self.batch_count as usize] = self.entries[i];
         }
         self.avail -= self.batch_count;
     }
@@ -369,6 +414,7 @@ impl ArrayCache {
     #[inline]
     fn get(&mut self) -> *mut u8 {
         //从本层获取一个对象
+        assert!(self.avail > 0);
         let t = self.entries[self.avail as usize - 1] as *mut u8;
         self.avail -= 1;
         t
@@ -376,15 +422,16 @@ impl ArrayCache {
     #[inline]
     fn put(&mut self, addr: *mut u8) {
         //往本层放一个对象
+        assert!(self.avail < self.limit);
         self.entries[self.avail as usize] = addr as usize;
         self.avail += 1;
     }
     #[inline]
-    fn is_empty(&self)->bool{
+    fn is_empty(&self) -> bool {
         self.avail == 0
     }
     #[inline]
-    fn is_full(&self)->bool{
+    fn is_full(&self) -> bool {
         self.avail == self.limit
     }
 }
@@ -393,7 +440,7 @@ impl ArrayCache {
 /// slab_partial: 部分分配链表\
 /// slab_free: 空Slab/未分配\
 /// slab_full: 完全分配\
-struct CacheNode {
+pub struct CacheNode {
     shared: *mut ArrayCache,
     slab_partial: ListHead,
     slab_free: ListHead,
@@ -412,7 +459,7 @@ impl CacheNode {
 }
 impl Debug for CacheNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        let shared = unsafe{&*self.shared};
+        let shared = unsafe { &*self.shared };
         f.write_fmt(format_args!(
             "CacheNode {{ \n\
             \tshared: {:?}, \n\
@@ -420,10 +467,7 @@ impl Debug for CacheNode {
             \tslab_free: {:?}, \n\
             \tslab_full: {:?} \
          }}",
-            shared,
-            self.slab_partial,
-            self.slab_free,
-            self.slab_full
+            shared, self.slab_partial, self.slab_free, self.slab_full
         ))
     }
 }
@@ -447,11 +491,11 @@ impl CacheNode {
         }
         let array_cache_addr = array_cache_addr.unwrap();
         self.shared = array_cache_addr as *mut ArrayCache;
-        unsafe {(*self.shared).init()};
+        unsafe { (*self.shared).inner.lock().init() };
         Ok(())
     }
 
-    fn alloc_inner(&self,cache:&MemCache)->*mut u8{
+    fn alloc_inner(&self, cache: &MemCache) -> *mut u8 {
         // 先检查partial链表
         let mut slab_list = to_list_head_ptr!(self.slab_partial);
         let slab = if !is_list_empty!(slab_list) {
@@ -487,63 +531,75 @@ impl CacheNode {
         addr
     }
 
-
-    fn alloc(&self, cache: &MemCache,addrs:&mut [usize]){
+    fn alloc(&self, cache: &MemCache, addrs: &mut [usize]) {
         // 检查共享的本地高速缓存是否有足够的对象
-        let shared_array = unsafe{&mut *self.shared};
+        let shared_array = unsafe { &mut *self.shared };
+        let mut shared_array = shared_array.inner.lock();
         if shared_array.avail >= addrs.len() as u32 {
             // 从共享的本地高速缓存中获取对象
             shared_array.pop(addrs);
-        }else{
+        } else {
             // 按批次从slab中分配过来
             // 直接返回给上一层的请求
-            for i in 0..shared_array.batch_count as usize{
+            for i in 0..shared_array.batch_count as usize {
                 let addr_inner = self.alloc_inner(cache);
                 addrs[i] = addr_inner as usize;
             }
         }
     }
 
-    fn dealloc_inner(&self,addr:*mut u8){
+    fn is_in_cache(&self, addr: *mut u8) -> Option<&mut Slab> {
         // 查找此对象所在的slab
         // 这个地址可能位于partial / full
-        self.slab_partial.iter().for_each(|slab_list| {
+        let slab_list = self.slab_partial.iter().find(|&slab_list| {
             let slab = unsafe { &mut (*container_of!(slab_list as usize, Slab, list)) };
-            if slab.is_in_slab(addr) {
-                slab.dealloc(addr);
-                if slab.used_object == 0 {
-                    // 如果slab中的对象已经全部释放，则将slab移动到free链表中
-                    slab.move_to(to_list_head_ptr!(self.slab_free));
-                }
-            }
+            slab.is_in_slab(addr)
         });
-        self.slab_full.iter().for_each(|slab_list| {
+        if slab_list.is_some() {
+            return Some(unsafe {
+                &mut (*container_of!(slab_list.unwrap() as usize, Slab, list))
+            });
+        }
+        let slab_list = self.slab_full.iter().find(|&slab_list| {
             let slab = unsafe { &mut (*container_of!(slab_list as usize, Slab, list)) };
-            if slab.is_in_slab(addr) {
-                slab.dealloc(addr);
-                if slab.used_object == 0 {
-                    slab.move_to(to_list_head_ptr!(self.slab_free));
-                } else {
-                    slab.move_to(to_list_head_ptr!(self.slab_partial));
-                }
-                return;
-            }
+            slab.is_in_slab(addr)
         });
+        if slab_list.is_some() {
+            return Some(unsafe {
+                &mut (*container_of!(slab_list.unwrap() as usize, Slab, list))
+            });
+        }
+        None
+    }
+    fn dealloc_inner(&self, addr: *mut u8) {
+        // 查找此对象所在的slab
+        // 这个地址可能位于partial / full
+        let slab = self.is_in_cache(addr).unwrap();
+        slab.dealloc(addr);
+        if slab.used_object == 0 {
+            // 如果slab中的对象已经全部释放，则将slab移动到free链表中
+            slab.move_to(to_list_head_ptr!(self.slab_free));
+        } else {
+            slab.move_to(to_list_head_ptr!(self.slab_partial));
+        }
     }
     fn dealloc(&self, addrs: &[usize]) {
-        let shared_array = unsafe{&mut *self.shared};
+        let shared_array = unsafe { &mut *self.shared };
+        let mut shared_array = shared_array.inner.lock();
         if shared_array.is_full() {
             // 如果共享的本地高速缓存已经满了,
             // 将缓存中旧的对象释放
-            let mut temp = [0usize;PER_CPU_OBJECTS];
-            shared_array.pop(&mut temp[0..shared_array.batch_count as usize]);
-            for i in 0..shared_array.batch_count as usize{
+            let mut temp = [0usize; PER_CPU_OBJECTS];
+            let batch_count = shared_array.batch_count as usize;
+            shared_array.pop(&mut temp[0..batch_count]);
+            for i in 0..shared_array.batch_count as usize {
                 self.dealloc_inner(temp[i] as *mut u8);
             }
         }
         // 如果共享的本地高速缓存没有满，则将对象放入共享的本地高速缓存中
         shared_array.push(addrs);
     }
+
     fn total_slabs(&self) -> usize {
         self.slab_partial.len() + self.slab_full.len() + self.slab_free.len()
     }
@@ -567,6 +623,9 @@ impl CacheNode {
         frames
     }
     fn destroy(&self) {
+        //回收本地共享高速缓存
+        let shared = self.shared;
+        dealloc_to_slab(shared as *mut u8);
         self.slab_partial.iter().for_each(|slab_list| {
             let slab = unsafe { &mut (*container_of!(slab_list as usize, Slab, list)) };
             slab.reclaim();
@@ -594,7 +653,6 @@ impl CacheNode {
 /// next_free: 下一个空闲的对象\
 /// first_object: 第一个对象的地址\
 /// free_list: 数组索引用来记录空闲的对象\
-///
 pub struct Slab {
     list: ListHead,
     cache: *mut MemCache,
@@ -771,6 +829,10 @@ impl Slab {
         let cache = unsafe { &mut *self.cache };
         let start_addr = self.start();
         let end_addr = start_addr.add((1 << cache.per_frames as usize) * unsafe { frame_size() });
+        trace!(
+            "addr:{:#x}, start:{:#x}, end:{:#x}",
+            addr, start_addr, end_addr
+        );
         (start_addr <= addr) && (addr < end_addr)
     }
 }
@@ -826,7 +888,7 @@ pub fn mem_cache_init() {
         core::mem::size_of::<ArrayCache>()
     );
     info!("BOOT_CACHE:\n{:?}", cache);
-    info!("ARRAY_CACHE:\n{:?}",array_cache);
+    info!("ARRAY_CACHE:\n{:?}", array_cache);
 }
 
 pub fn create_mem_cache(
@@ -915,12 +977,22 @@ pub fn alloc_from_slab(size: usize, _align: usize) -> Option<*mut u8> {
     }
 }
 
-pub fn dealloc_to_slab(addr: *mut u8) {
+pub fn dealloc_to_slab(addr: *mut u8)->Result<(),SlabError> {
     let cache_list = unsafe { &SLAB_CACHES };
+    let mut ok = false;
     cache_list.iter().for_each(|cache| {
         let cache = unsafe { &mut (*container_of!(cache as usize, MemCache, list)) };
-        cache.dealloc(addr);
+        let ans = cache.dealloc(addr);
+        if ans.is_ok() {
+            ok = true;
+            return
+        }
     });
+    if ok {
+        Ok(())
+    }else {
+        Err(SlabError::NotInCache)
+    }
 }
 
 /// 打印系统内的所有cache 信息
@@ -937,40 +1009,133 @@ pub fn print_slab_system_info() {
     });
 }
 
-#[test]
-pub fn test_slab_system() {
-    let cache = unsafe { &mut MEM_CACHE_BOOT };
-    let test_addr = cache.alloc();
-    info!("after alloc first object at:{:?}", test_addr);
-    info!("{:?}", cache);
-    cache.dealloc(test_addr);
-    info!("after dealloc first object at:{:?}", test_addr);
-    info!("{:?}", cache);
-    for _ in 0..cache.per_objects - 15 {
-        let _ = cache.alloc();
+
+
+#[cfg(test)]
+mod array_cache_test{
+    use crate::slab::{ArrayCache, PER_CPU_OBJECTS};
+    #[test]
+    fn test_push_pop(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        assert_eq!(inner.is_empty(), true);
+        assert_eq!(inner.batch_count as usize,PER_CPU_OBJECTS/2);
+        assert_eq!(inner.limit as usize,PER_CPU_OBJECTS);
+        let mut data = [0;PER_CPU_OBJECTS];
+        let batch = inner.batch_count as usize;
+        inner.push(&data[0..batch]);
+        inner.push(&data[0..batch]);
+        assert_eq!(inner.is_empty(), false);
+        assert_eq!(inner.avail as usize, PER_CPU_OBJECTS);
+        inner.pop(&mut data[0..batch]);
+        assert_eq!(inner.avail,PER_CPU_OBJECTS as u32/ 2);
     }
-    info!("after alloc all objects:");
-    info!("{:?}", cache);
-    for i in 0..cache.per_objects - 15 {
-        unsafe {
-            cache.dealloc(test_addr.add((i * cache.object_size) as usize));
-        }
+    #[test]
+    #[should_panic]
+    fn test_push_pop_panic1(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        let mut data = [0;PER_CPU_OBJECTS];
+        let batch = inner.batch_count as usize;
+        // 需要保证按批次送入
+        inner.push(&data[0..]);
     }
-    info!("after dealloc all objects:\n{:?}", cache);
-    print_slab_system_info();
-    let count = reclaim_frame_from_cache();
-    info!("reclaim {} frames from cache", count);
-    print_slab_system_info();
+    #[test]
+    #[should_panic]
+    fn test_push_pop_panic2(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        let mut data = [0;PER_CPU_OBJECTS];
+        let batch = inner.batch_count as usize;
+        // 只有在队列满的情况下才会回收对象
+        inner.push(&data[0..batch]);
+        inner.pop(&mut data[0..batch]);
+    }
+    #[test]
+    fn test_get_put(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        let mut data = [10;PER_CPU_OBJECTS];
+        let batch = inner.batch_count as usize;
+        // 只有在队列满的情况下才会回收对象
+        inner.push(&data[0..batch]);
+        let t = inner.get();
+        assert_eq!(10,t as usize);
+        assert_eq!(inner.avail as usize,batch-1);
+    }
+    #[test]
+    #[should_panic]
+    fn test_get_put_panic(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        inner.get();
+    }
+    #[test]
+    #[should_panic]
+    fn test_get_put_panic1(){
+        let mut cache = ArrayCache::new();
+        let mut inner = cache.inner.lock();
+        let mut data = [0;PER_CPU_OBJECTS];
+        let batch = inner.batch_count as usize;
+        // 只有在队列满的情况下才会回收对象
+        inner.push(&data[0..batch]);
+        inner.push(&data[0..batch]);
+        inner.put(10 as *mut u8);
+    }
 }
 
-#[test]
-pub fn test_after_init_kalloc() {
-    let ptr = alloc_from_slab(512, 8).unwrap();
-    info!("alloc from slab at:{:x}", ptr as usize);
-    print_slab_system_info();
-    dealloc_to_slab(ptr);
-    print_slab_system_info();
-    let count = reclaim_frame_from_cache();
-    info!("reclaim {} frames from cache", count);
-    print_slab_system_info();
+#[cfg(test)]
+mod slab_test{
+    use crate::MemCache;
+    use crate::slab::{CacheNode, Flags, mem_cache_init};
+    #[no_mangle]
+    unsafe fn free_frames(addr: *mut u8, num: usize) {
+
+    }
+    #[no_mangle]
+    fn current_cpu_id() -> usize {
+        0
+    }
+    #[no_mangle]
+    unsafe fn alloc_frames(num: usize) -> *mut u8 {
+        core::ptr::null_mut()
+    }
+
+
+
+    #[test]
+    fn test_init_cache_small_obj(){
+        let mut cache = MemCache::new();
+        cache.init("test_cache",128,7);
+        assert_eq!(cache.align,8);
+        assert_eq!(cache.cache_name,"test_cache");
+        assert_eq!(cache.object_size,128);
+        assert_eq!(cache.flags,Flags::SLAB_ON);
+        assert_eq!(cache.per_frames,0);
+        assert_eq!(cache.per_objects,30);
+        assert_eq!(cache.color,5);
+        cache.init("test_cache",127,7);
+        assert_eq!(cache.object_size,128);
+    }
+
+    #[test]
+    fn test_init_cache_big_obj() {
+        let mut cache = MemCache::new();
+        cache.init("test_cache",512,7);
+        assert_eq!(cache.flags,Flags::SLAB_OFF);
+        assert_eq!(cache.color,0);
+        assert_eq!(cache.per_frames,0);
+        assert_eq!(cache.per_objects,8);
+    }
+
+    #[test]
+    fn test_cache_node(){
+        let mut node = CacheNode::new();
+        node.init();
+        let x = node.total_slabs();
+        assert_eq!(x,0);
+        assert_eq!(node.reclaim_frames(10),0);
+        assert_eq!(node.used_objects(10),0);
+    }
+
 }

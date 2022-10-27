@@ -11,10 +11,9 @@ use preprint::pprintln;
 mod formation;
 mod kmalloc;
 mod slab;
-use slab::*;
 
 pub use kmalloc::SlabAllocator;
-pub use slab::{
+pub use crate::slab::{
     alloc_from_slab, create_mem_cache, dealloc_to_slab, print_slab_system_info,
     reclaim_frame_from_cache, MemCache,
 };
@@ -46,7 +45,7 @@ extern "C" {
 
 pub fn init_slab_system(frame_size: usize, cache_line_size: usize) {
     init_slab_info(frame_size, cache_line_size);
-    mem_cache_init(); //初始化第一个Cache
+    slab::mem_cache_init(); //初始化第一个Cache
     kmalloc::init_kmalloc(); //初始化常用的Cache
 }
 

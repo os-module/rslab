@@ -1,8 +1,7 @@
 use log::{Level, LevelFilter, Metadata, Record};
 use preprint::Print;
-use slab::{create_mem_cache, init_slab_system, print_slab_system_info};
+use slab::{alloc_from_slab, create_mem_cache, dealloc_to_slab, init_slab_system, print_slab_system_info};
 use std::alloc::{alloc, dealloc, Layout};
-use std::arch::x86_64::__cpuid;
 use std::fmt::Arguments;
 
 #[no_mangle]
@@ -65,11 +64,38 @@ fn init_log() {
     });
 }
 
+
+
 fn main() {
+    // There are some log information in slab system
     init_log();
+    // If you want to print slab usage, you need to initialize this trait object
     preprint::init_print(&MPrint);
     init_slab_system(4096, 64);
-    let cache = create_mem_cache("my_cache",56,8).unwrap();
+    // create your own cache
+    let cache = create_mem_cache("my_cache", 56, 8).unwrap();
+    let cache1 = create_mem_cache("my_cache", 56, 8);
+    assert!(cache1.is_err()); // cache name already exists
+    // alloc from your cache
+    let ptr = cache.alloc();
+    println!("ptr: {:p}", ptr);
+    let ptr1 = cache.alloc();
+    println!("ptr1: {:p}", ptr1);
+    println!("ptr1 - ptr: {}", ptr as usize - ptr1 as usize);
     print_slab_system_info();
-
+    cache.dealloc(ptr).unwrap();
+    cache.dealloc(ptr1).unwrap();
+    print_slab_system_info();
+    // destruct your cache
+    cache.destroy();
+    // if use cache after destroy, it will panic
+    // cache.alloc();
+    let ptr = alloc_from_slab(56, 8);
+    print_slab_system_info();
+    let ptr = ptr.unwrap();
+    dealloc_to_slab(ptr).unwrap();
+    print_slab_system_info();
+    // if you dealloc a ptr which is not from slab, it will return error
+    let error = dealloc_to_slab(123123123 as *mut u8);
+    assert!(error.is_err());
 }
