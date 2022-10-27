@@ -397,7 +397,16 @@ impl ArrayCacheInner {
         }
         self.avail += self.batch_count;
     }
-    #[inline]
+    fn pop_back(&mut self, addrs: &mut [usize]) {
+        assert_eq!(addrs.len(), self.batch_count as usize);
+        assert!(self.avail >= self.batch_count);
+        //从后往前取
+        let begin = self.avail - self.batch_count;
+        for i in 0..self.batch_count as usize {
+            addrs[i] = self.entries[begin as usize + i];
+        }
+        self.avail -= self.batch_count;
+    }
     fn pop(&mut self, addrs: &mut [usize]) {
         //从本层往下一层回收的batch_count个对象
         //从前往后取
@@ -412,6 +421,7 @@ impl ArrayCacheInner {
         }
         self.avail -= self.batch_count;
     }
+
     /// 需要调用者保证存在可用的对象
     #[inline]
     fn get(&mut self) -> *mut u8 {
@@ -539,7 +549,7 @@ impl CacheNode {
         let mut shared_array = shared_array.inner.lock();
         if shared_array.avail >= addrs.len() as u32 {
             // 从共享的本地高速缓存中获取对象
-            shared_array.pop(addrs);
+            shared_array.pop_back(addrs);
         } else {
             // 按批次从slab中分配过来
             // 直接返回给上一层的请求
