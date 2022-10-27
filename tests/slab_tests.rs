@@ -1,6 +1,6 @@
 mod common;
 
-use slab::{create_mem_cache, init_slab_system};
+use rslab::{create_mem_cache, init_slab_system};
 
 #[test]
 fn test_create_cache(){

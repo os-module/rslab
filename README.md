@@ -2,7 +2,7 @@
 
 ## 模型结构
 
-![无标题-2022-10-20-1706.excalidraw](assert/无标题-2022-10-20-1706.excalidraw.png)
+![无标题-2022-10-20-1706.excalidraw](assert/rslab.png)
 
 ## 对外接口
 
@@ -54,9 +54,10 @@ pub fn print_slab_system_info()
 ```rust
 pub fn alloc_frames(num:usize)->*mut u8
 pub fn free_frames(addr: *mut u8, num: usize) 
+pub fn current_cpu_id() -> usize
 ```
 
-外部需要提供一个分配页面的接口和回收页面的接口。
+外部需要提供一个分配页面的接口和回收页面的接口以及一个获取当前cpu的id的接口。
 
 
 
@@ -69,6 +70,8 @@ pub fn free_frames(addr: *mut u8, num: usize)
 fn alloc_frames(num: usize) -> *mut u8 
 #[no_mangle]
 fn free_frames(addr: *mut u8, num: usize) 
+#[no_mangle]
+pub fn current_cpu_id() -> usize
 ```
 
 2. 初始化slab子系统
@@ -104,11 +107,9 @@ lazy_static! {
 
 ## 待办事项
 
-- [ ] 多核，每CPU缓存
-- [ ] 更细粒度的锁
+- [x] 多核，每CPU缓存
+- [x] 细粒度的锁
 - [ ] 其它优化
-
-
 
 ## 细节
 

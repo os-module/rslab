@@ -509,7 +509,7 @@ impl CacheNode {
             // 如果partial链表为空，则检查free链表
             // 如果free链表也为空，则需要分配新的slab
             // 需要直接从vmalloc中分配页面过来
-            debug!("alloc new slab");
+            debug!("alloc new rslab");
             unsafe { Slab::new(cache) }; // 创建新的slab,并加入到cache的free链表中
             assert!(!is_list_empty!(to_list_head_ptr!(self.slab_free)));
             slab_list = self.slab_free.next; //第一个可用slab
@@ -746,7 +746,7 @@ impl Slab {
         }
         let slab = unsafe { &mut *(slab_ptr as *mut Slab) };
         list_head_init!(slab.list);
-        trace!("slab:{:?}", slab);
+        trace!("rslab:{:?}", slab);
         // 加入到cache的slab_free链表中
         list_add_tail!(
             to_list_head_ptr!(slab.list),
@@ -769,7 +769,7 @@ impl Slab {
             self.next_free += 1;
             self.used_object += 1;
             trace!(
-                "slab alloc {:#x}, object_size is {}, used: {}",
+                "rslab alloc {:#x}, object_size is {}, used: {}",
                 addr,
                 cache.object_size,
                 self.used_object
@@ -789,7 +789,7 @@ impl Slab {
         }
         self.used_object -= 1;
         trace!(
-            "slab dealloc {:?}, object_size is {}, used: {}",
+            "rslab dealloc {:?}, object_size is {}, used: {}",
             addr,
             cache.object_size,
             self.used_object
@@ -884,7 +884,7 @@ pub fn mem_cache_init() {
         info!("root_head at: {:?}", to_list_head_ptr!(SLAB_CACHES));
     }
     info!("cache size is: {}", core::mem::size_of_val(cache));
-    info!("slab size is: {}", core::mem::size_of::<Slab>());
+    info!("rslab size is: {}", core::mem::size_of::<Slab>());
     info!(
         "array_cache size is: {}",
         core::mem::size_of::<ArrayCache>()
