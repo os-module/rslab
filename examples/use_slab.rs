@@ -1,8 +1,7 @@
-use log::{Level, LevelFilter, Metadata, Record};
 use preprint::Print;
-use rslab::{alloc_from_slab, create_mem_cache, dealloc_to_slab, init_slab_system, print_slab_system_info};
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{alloc, dealloc, GlobalAlloc, Layout};
 use std::fmt::Arguments;
+use rslab::{init_slab_system, Object, ObjectAllocator, print_slab_system_info, SlabAllocator, SlabCache};
 
 #[no_mangle]
 unsafe fn free_frames(addr: *mut u8, num: usize) {
@@ -26,62 +25,36 @@ impl Print for MPrint {
     }
 }
 
-struct Logger;
-impl log::Log for Logger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
-    }
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
-            return;
+#[allow(unused)]
+struct TestObj {
+    a: [u8;56],
+}
+impl Object for TestObj{
+    fn construct() -> Self {
+        Self{
+            a:[0;56]
         }
-        let color = match record.level() {
-            Level::Error => 31, // Red
-            Level::Warn => 93,  // BrightYellow
-            Level::Info => 34,  // Blue
-            Level::Debug => 32, // Green
-            Level::Trace => 90, // BrightBlack
-        };
-        println!(
-            "\u{1B}[{}m[{:>5}] {}\u{1B}[0m",
-            color,
-            record.level(),
-            record.args(),
-        );
     }
-    fn flush(&self) {}
 }
-
-fn init_log() {
-    log::set_logger(&Logger).unwrap();
-    log::set_max_level(match option_env!("LOG") {
-        Some("ERROR") => LevelFilter::Error,
-        Some("WARN") => LevelFilter::Warn,
-        Some("INFO") => LevelFilter::Info,
-        Some("DEBUG") => LevelFilter::Debug,
-        Some("TRACE") => LevelFilter::Trace,
-        _ => LevelFilter::Off,
-    });
-}
-
-
 
 fn main() {
-    // There are some log information in rslab system
-    init_log();
     // If you want to print rslab usage, you need to initialize this trait object
     preprint::init_print(&MPrint);
     init_slab_system(4096, 64);
+    // use_your_cache();
+    unsafe {
+        use_common_cache();
+    }
+}
+fn use_your_cache() {
     // create your own cache
-    let cache = create_mem_cache("my_cache", 56, 8).unwrap();
-    let cache1 = create_mem_cache("my_cache", 56, 8);
-    assert!(cache1.is_err()); // cache name already exists
+    let mut cache = SlabCache::<TestObj>::new("mycache").unwrap();
     // alloc from your cache
-    let ptr = cache.alloc();
+    let ptr = cache.alloc().unwrap();
     println!("ptr: {:p}", ptr);
-    let ptr1 = cache.alloc();
+    let ptr1 = cache.alloc().unwrap();
     println!("ptr1: {:p}", ptr1);
-    println!("ptr1 - ptr: {}", ptr as usize - ptr1 as usize);
+    println!("ptr1 - ptr: {}", ptr as *const _ as usize - ptr1 as *const _ as usize);
     print_slab_system_info();
     cache.dealloc(ptr).unwrap();
     cache.dealloc(ptr1).unwrap();
@@ -89,13 +62,27 @@ fn main() {
     // destruct your cache
     cache.destroy();
     // if use cache after destroy, it will panic
-    // cache.alloc();
-    let ptr = alloc_from_slab(56, 8);
+    // cache.alloc().unwrap();
+}
+
+unsafe fn use_common_cache(){
+    let slab_allocator = SlabAllocator;
+    let layout1 = Layout::from_size_align(4096, 4096).unwrap();
+    let addr1 = slab_allocator.alloc(layout1);
+    println!("{:p}",addr1);
+    let layout2 = Layout::from_size_align(34, 8).unwrap();
+    let addr2 = slab_allocator.alloc(layout2);
+    println!("{:p}",addr2);
+
     print_slab_system_info();
-    let ptr = ptr.unwrap();
-    dealloc_to_slab(ptr).unwrap();
+
+    slab_allocator.dealloc(addr2, layout2);
+    slab_allocator.dealloc(addr1, layout1);
     print_slab_system_info();
-    // if you dealloc a ptr which is not from rslab, it will return error
-    let error = dealloc_to_slab(123123123 as *mut u8);
-    assert!(error.is_err());
+    let addr3 = slab_allocator.alloc(layout1);
+    assert_eq!(addr1,addr3);
+    let addr4 = slab_allocator.alloc(layout2);
+    assert_eq!(addr2,addr4);
+    slab_allocator.dealloc(addr4, layout2);
+    slab_allocator.dealloc(addr3, layout1);
 }

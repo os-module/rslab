@@ -1,8 +1,7 @@
+use crate::slab::{alloc_from_slab, create_mem_cache, dealloc_to_slab};
 use crate::SLAB_CACHES;
-use crate::{alloc_from_slab, create_mem_cache, dealloc_to_slab, print_slab_system_info};
 use core::alloc::{GlobalAlloc, Layout};
 use doubly_linked_list::*;
-use spin::Mutex;
 
 const CACHE_INFO_MAX: usize = 21;
 const KMALLOC_INFO: [&'static str; CACHE_INFO_MAX] = [
@@ -38,19 +37,17 @@ pub fn init_kmalloc() {
 
 pub struct SlabAllocator;
 
-
 unsafe impl GlobalAlloc for SlabAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let align = layout.align();
         let ptr = alloc_from_slab(size, align);
-        if ptr.is_some() {
-            ptr.unwrap()
-        } else {
-            panic!("{:?}", layout);
+        match ptr {
+            Ok(ptr)=>ptr,
+            Err(err)=>panic!("{:?} {:?}",err,layout),
         }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        dealloc_to_slab(ptr);
+        dealloc_to_slab(ptr).unwrap();
     }
 }
