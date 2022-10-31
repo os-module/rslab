@@ -9,7 +9,7 @@ authors = ["chenlinfeng <chenlinfeng25@outlook.com>"]
 repository = "https://github.com/os-module/rslab"
 readme = "README.md"
 keywords = ["slab", "allocator","os","no_std","no_alloc"]
-
+documentation = "https://docs.rs/rslab"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -24,7 +24,6 @@ bitflags = "1.3.2"
 
 
 [dev-dependencies]
-lazy_static = "1.4.0"
 rand =  "0.8.5"
 linked_list_allocator = { version = "0.10.3", features =  ["use_spin_nightly", "const_mut_refs", "alloc_ref"] }
 simple-chunk-allocator = "0.1.5"
