@@ -41,7 +41,7 @@ fn main() {
     // If you want to print rslab usage, you need to initialize this trait object
     preprint::init_print(&MPrint);
     init_slab_system(4096, 64);
-    // use_your_cache();
+    use_your_cache();
     unsafe {
         use_common_cache();
     }

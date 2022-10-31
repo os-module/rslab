@@ -1,7 +1,9 @@
 use crate::slab::{alloc_from_slab, create_mem_cache, dealloc_to_slab};
 use crate::SLAB_CACHES;
-use core::alloc::{GlobalAlloc, Layout};
+use core::alloc::{Allocator, AllocError, GlobalAlloc, Layout};
+use core::ptr::NonNull;
 use doubly_linked_list::*;
+use crate::formation::SlabError;
 
 const CACHE_INFO_MAX: usize = 21;
 const KMALLOC_INFO: [&'static str; CACHE_INFO_MAX] = [
@@ -39,15 +41,33 @@ pub struct SlabAllocator;
 
 unsafe impl GlobalAlloc for SlabAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let size = layout.size();
-        let align = layout.align();
-        let ptr = alloc_from_slab(size, align);
+        let ptr = alloc_from_slab(layout);
         match ptr {
             Ok(ptr)=>ptr,
             Err(err)=>panic!("{:?} {:?}",err,layout),
         }
     }
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        dealloc_to_slab(ptr).unwrap();
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        dealloc_to_slab(ptr,layout).unwrap();
+    }
+}
+
+unsafe impl Allocator for SlabAllocator{
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        if layout.size() == 0 {
+            return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
+        }
+        match alloc_from_slab(layout) {
+            Ok(ptr) => {
+                let ptr = NonNull::new(ptr).ok_or(AllocError)?;
+                Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))
+            }
+            Err(_) => Err(AllocError),
+        }
+    }
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        if layout.size() != 0 {
+            dealloc_to_slab(ptr.as_ptr(),layout).unwrap();
+        }
     }
 }

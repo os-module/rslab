@@ -106,7 +106,11 @@ static HEAP_ALLOCATOR: SlabAllocator = SlabAllocator;
 
 在内核的文件模块，进程模块，都可以为既定的结构体创建一个Cache,并使用此Cache分配对象。
 
+## 性能测试
 
+使用`simple-chunk-allocator`提供的测试基准，我们测试了几种分配器得性能，得到的结果如下：(ticks表示进行一次分配经过的stamp)
+
+![image-20221031202910990](assert/image-20221031202910990.png)
 
 ## 待办事项
 
