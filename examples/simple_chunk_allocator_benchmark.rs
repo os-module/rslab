@@ -177,7 +177,6 @@ fn main() {
 
 fn benchmark_allocator(alloc: &mut dyn Allocator) -> BenchRunResults {
     let now_fn = || unsafe { x86::time::rdtscp().0 };
-
     let mut all_allocations = Vec::new();
     let mut all_deallocations = Vec::new();
     let mut all_alloc_measurements = Vec::new();

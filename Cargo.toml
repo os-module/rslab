@@ -25,13 +25,13 @@ bitflags = "1.3.2"
 
 [dev-dependencies]
 rand =  "0.8.5"
-linked_list_allocator = { version = "0.10.3", features =  ["use_spin_nightly", "const_mut_refs", "alloc_ref"] }
-simple-chunk-allocator = "0.1.5"
 average = "0.13.1"
 x86 = "0.51.0"
 good_memory_allocator = {git = "https://github.com/MaderNoob/galloc",features = ["spin", "allocator"]}
 buddy_system_allocator = "0.8.0"
-
+linked_list_allocator = { version = "0.10.3", features =  ["use_spin_nightly", "const_mut_refs", "alloc_ref"] }
+simple-chunk-allocator = "0.1.5"
+core_affinity = "0.5.10"
 
 [profile.release]
 lto = true

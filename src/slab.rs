@@ -295,10 +295,10 @@ impl MemCache {
             panic!("cache had been destroyed");
         }
         /// 判断此地址是否属于此cache
-        self.mem_cache_node.is_in_cache(addr)?;
         let cpu_id = unsafe { current_cpu_id() };
         let array_cache = unsafe { &mut *self.array_cache[cpu_id] };
         let mut array_cache = array_cache.inner.lock();
+        // self.mem_cache_node.is_in_cache(addr)?;
         if array_cache.is_full() {
             let mut objects = [0usize; PER_CPU_OBJECTS];
             let batch_count = array_cache.batch_count as usize;

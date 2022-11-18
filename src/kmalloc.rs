@@ -36,7 +36,6 @@ pub fn init_kmalloc() {
         create_mem_cache(info, 1 << (i + 3), 8);
     }
 }
-
 pub struct SlabAllocator;
 
 unsafe impl GlobalAlloc for SlabAllocator {
