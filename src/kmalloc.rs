@@ -40,6 +40,12 @@ pub struct SlabAllocator;
 
 unsafe impl GlobalAlloc for SlabAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // ensure the size >= 8
+        let layout = if layout.size() < 8{
+            Layout::from_size_align(8,8).unwrap()
+        }else {
+            layout
+        };
         let ptr = alloc_from_slab(layout);
         match ptr {
             Ok(ptr)=>ptr,
@@ -47,6 +53,11 @@ unsafe impl GlobalAlloc for SlabAllocator {
         }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let layout = if layout.size() < 8{
+            Layout::from_size_align(8,8).unwrap()
+        }else {
+            layout
+        };
         dealloc_to_slab(ptr,layout).unwrap();
     }
 }
@@ -56,6 +67,11 @@ unsafe impl Allocator for SlabAllocator{
         if layout.size() == 0 {
             return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
         }
+        let layout = if layout.size() < 8{
+            Layout::from_size_align(8,8).unwrap()
+        }else {
+            layout
+        };
         match alloc_from_slab(layout) {
             Ok(ptr) => {
                 let ptr = NonNull::new(ptr).ok_or(AllocError)?;
@@ -66,6 +82,11 @@ unsafe impl Allocator for SlabAllocator{
     }
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         if layout.size() != 0 {
+            let layout = if layout.size() < 8{
+                Layout::from_size_align(8,8).unwrap()
+            }else {
+                layout
+            };
             dealloc_to_slab(ptr.as_ptr(),layout).unwrap();
         }
     }
