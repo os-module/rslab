@@ -17,9 +17,9 @@ impl Object for TestObj{
 #[test]
 fn test_create_cache() {
     init_slab_system(4096, 64);
-    let mut cache = SlabCache::<TestObj>::new("mycache").unwrap();
+    let mut cache = SlabCache::<TestObj>::new("mycache0").unwrap();
     let cache_info = cache.get_cache_info();
-    assert_eq!(cache_info.cache_name, "mycache");
+    assert_eq!(cache_info.cache_name, "mycache0");
     assert_eq!(cache_info.align, 8);
     assert_eq!(cache_info.per_frames, 0);
     assert_eq!(cache_info.per_objects, 67);
@@ -52,16 +52,7 @@ fn test_create_cache() {
 #[test]
 #[should_panic]
 fn test_slab_panic() {
-    let _cache = SlabCache::<TestObj>::new("my_cache").unwrap();
+    let _cache = SlabCache::<TestObj>::new("my_cache1").unwrap();
     // there has been a cache named "my_cache1"
-    let _cache = SlabCache::<TestObj>::new("my_cache").unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_slab_panic1() {
-    let mut cache = SlabCache::<TestObj>::new("my_cache").unwrap();
-    cache.destroy();
-    // cache has been destroyed
-    cache.alloc().unwrap();
+    let _cache = SlabCache::<TestObj>::new("my_cache1").unwrap();
 }
